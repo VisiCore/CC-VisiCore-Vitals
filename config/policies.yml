@@ -1,0 +1,57 @@
+# Product API access declaration for Cribl Vision.
+# At install time, admins see exactly which platform resources the app will use.
+# All calls are read-only monitoring endpoints.
+
+policies:
+  # Worker groups / edge fleets inventory
+  - object: '/master/groups'
+    actions: ['GET']
+  - object: '/master/groups/*'
+    actions: ['GET']
+
+  # Worker & edge node health, CPU/mem/disk, versions
+  - object: '/master/workers'
+    actions: ['GET']
+  - object: '/master/summary/workers'
+    actions: ['GET']
+
+  # Internal throughput / volume / dropped-event metrics
+  - object: '/system/metrics/query'
+    actions: ['POST']
+
+  # Leader/system info and daily license usage (for the Data Value dashboard)
+  - object: '/system/info'
+    actions: ['GET']
+  - object: '/system/licenses/usage'
+    actions: ['GET']
+
+  # License quota, for the headroom projection on the Data Value dashboard
+  - object: '/system/licenses'
+    actions: ['GET']
+
+  # Per-node CPU/memory history for the Worker Nodes sparklines.
+  # Worker (/w/:wid) requests are authorized against the group-equivalent path,
+  # so both must be declared.
+  - object: '/w/:wid/system/metrics'
+    actions: ['GET']
+  - object: '/m/:gid/system/metrics'
+    actions: ['GET']
+
+  # System notifications (errors / warnings / info) for the Notifications page
+  - object: '/system/messages'
+    actions: ['GET']
+
+  # Per-group Source and Destination config + authoritative runtime health
+  # (status.health on these endpoints reflects real connection health)
+  - object: '/m/:gid/system/inputs'
+    actions: ['GET']
+  - object: '/m/:gid/system/outputs'
+    actions: ['GET']
+  - object: '/m/:gid/system/status/inputs'
+    actions: ['GET']
+  - object: '/m/:gid/system/status/outputs'
+    actions: ['GET']
+  - object: '/m/:gid/health'
+    actions: ['GET']
+  - object: '/health'
+    actions: ['GET']

@@ -1,0 +1,130 @@
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useApp, TIME_RANGES } from '../state/AppContext';
+import { IS_DEMO } from '../api/client';
+import { timeAgo } from '../lib/format';
+import {
+  IconOverview,
+  IconThroughput,
+  IconSources,
+  IconRoutes,
+  IconDest,
+  IconNodes,
+  IconValue,
+  IconBell,
+  IconRefresh,
+} from './icons';
+
+const NAV = [
+  { to: '/', label: 'Overview', Icon: IconOverview, title: 'Deployment Overview' },
+  { to: '/throughput', label: 'Throughput', Icon: IconThroughput, title: 'Throughput & Volume' },
+  { to: '/sources', label: 'Sources', Icon: IconSources, title: 'Sources' },
+  { to: '/routes', label: 'Routes', Icon: IconRoutes, title: 'Route Health' },
+  { to: '/destinations', label: 'Destinations', Icon: IconDest, title: 'Destinations' },
+  { to: '/nodes', label: 'Worker Nodes', Icon: IconNodes, title: 'Worker & Edge Nodes' },
+  { to: '/notifications', label: 'Notifications', Icon: IconBell, title: 'System Notifications' },
+  { to: '/value', label: 'Data Value', Icon: IconValue, title: 'Data Reduction Value' },
+];
+
+function BrandMark() {
+  return (
+    <svg className="brand-mark" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="var(--accent)" />
+      <path
+        d="M6 16c2.4-4.2 6-6.3 10-6.3S23.6 11.8 26 16c-2.4 4.2-6 6.3-10 6.3S8.4 20.2 6 16z"
+        stroke="var(--accent-ink)"
+        strokeWidth="1.8"
+        fill="none"
+      />
+      <circle cx="16" cy="16" r="3.1" fill="var(--accent-ink)" />
+    </svg>
+  );
+}
+
+export function Layout() {
+  const { groups, group, setGroup, range, setRangeId, refresh, lastRefresh, tick } = useApp();
+  const loc = useLocation();
+  const active = NAV.find((n) => n.to === loc.pathname) ?? NAV[0];
+  const now = Date.now();
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <BrandMark />
+          <div>
+            <div className="brand-name">Cribl Vision</div>
+            <div className="brand-sub">Health Monitoring</div>
+          </div>
+        </div>
+        {NAV.map(({ to, label, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+          >
+            <Icon />
+            {label}
+          </NavLink>
+        ))}
+        <div className="nav-spacer" />
+        <div className="nav-foot">
+          {IS_DEMO ? 'Demo data' : 'Live'} · updated {timeAgo(lastRefresh, now)}
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <h1>{active.title}</h1>
+            <span className="sub">
+              {group === 'all' ? 'All groups & fleets' : group} · {range.label.toLowerCase()}
+            </span>
+          </div>
+          <div className="topbar-spacer" />
+          {IS_DEMO && <span className="demo-badge">DEMO DATA</span>}
+
+          <div className="control">
+            <select
+              className="select"
+              value={group}
+              onChange={(e) => setGroup(e.target.value)}
+              aria-label="Worker group"
+            >
+              <option value="all">All groups</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.id} {g.type === 'edge' ? '(edge)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="control">
+            <select
+              className="select"
+              value={range.id}
+              onChange={(e) => setRangeId(e.target.value)}
+              aria-label="Time range"
+            >
+              {TIME_RANGES.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button className="btn" onClick={refresh} title="Refresh now">
+            <IconRefresh key={tick} />
+            Refresh
+          </button>
+        </header>
+
+        <div className="content">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
