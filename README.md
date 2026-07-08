@@ -4,6 +4,18 @@
 
 ![Cribl Vision — Deployment Overview](docs/overview.png)
 
+## Install
+
+Grab the app archive from the [latest release](https://github.com/VisiCore/vct-cribl-vision-app/releases/latest),
+then in Cribl go to **Manage → App Platform → Add App → Import from File** and upload the
+`.tgz`. Alternatively, use **Import from URL** with the release asset link directly:
+
+```
+https://github.com/VisiCore/vct-cribl-vision-app/releases/download/v1.1.0/vision-next-gen-1.1.0.tgz
+```
+
+Once installed and shared, the app runs on live data automatically — no configuration needed.
+
 A Cribl App Platform app that gives Stream administrators a single, real‑time view of
 deployment health. Where the original [CriblVision Pack](https://packs.cribl.io/packs/cribl-criblvision-for-stream)
 re‑implemented the same dashboards three times (Cribl Search / Splunk / Grafana), this
