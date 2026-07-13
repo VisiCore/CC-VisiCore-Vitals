@@ -1,19 +1,42 @@
 // Cribl API client. Uses the platform fetch proxy (window.CRIBL_API_URL) when
 // running inside Cribl; falls back to captured fixtures for standalone demo/dev.
 import type {
+  CollectionJob,
+  CriblNotification,
   Group,
   IOStatus,
   LicenseUsageDay,
   MetricRow,
+  NotificationTarget,
   SystemInfo,
   SystemMessage,
   WorkerNode,
 } from './types';
 
+export interface CriblUser {
+  id: string;
+  username: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  initials?: string;
+}
+
 declare global {
   interface Window {
     CRIBL_API_URL?: string;
     CRIBL_BASE_PATH?: string;
+    getCriblUser?: () => Promise<CriblUser>;
+  }
+}
+
+/** Signed-in Cribl user, or null in demo mode / on failure. */
+export async function getCurrentUser(): Promise<CriblUser | null> {
+  if (typeof window === 'undefined' || !window.getCriblUser) return null;
+  try {
+    return await window.getCriblUser();
+  } catch {
+    return null;
   }
 }
 
@@ -30,9 +53,23 @@ export const CRIBL_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, '');
  * Stream UI for a group. Absolute URL so it works from inside the app's
  * sandboxed iframe with target="_top". Returns '' in demo mode (no live origin).
  */
-export function streamLink(kind: 'source' | 'destination' | 'route', group: string): string {
+export function streamLink(
+  kind: 'source' | 'destination' | 'route' | 'pipeline' | 'job' | 'notification',
+  group: string,
+): string {
   if (!CRIBL_ORIGIN) return '';
-  const seg = kind === 'source' ? 'inputs' : kind === 'destination' ? 'outputs' : 'routes';
+  const seg =
+    kind === 'source'
+      ? 'inputs'
+      : kind === 'destination'
+        ? 'outputs'
+        : kind === 'route'
+          ? 'routes'
+          : kind === 'pipeline'
+            ? 'pipelines'
+            : kind === 'job'
+              ? 'jobs'
+              : 'notifications';
   return `${CRIBL_ORIGIN}/stream/m/${group}/${seg}`;
 }
 
@@ -61,6 +98,24 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`POST ${path} → ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
+}
+
+async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${path} → ${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'DELETE',
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`DELETE ${path} → ${res.status} ${res.statusText}`);
 }
 
 interface Fixtures {
@@ -275,8 +330,16 @@ const DEMO_PQ: Record<string, { pqBytes: number; peak: number; now: boolean; buc
   'defaultHybrid::archive-lake': { pqBytes: 0, peak: 1.4 * 1024 ** 3, now: false, buckets: 3 },
 };
 
-function demoPQStats(group: string | 'all'): OutputPQStat[] {
-  return Object.entries(DEMO_PQ)
+// Source-side PQ demo: one source spooling to disk while its pipeline backs up.
+const DEMO_PQ_SOURCES: Record<string, { pqBytes: number; peak: number; now: boolean; buckets: number }> = {
+  'default::in_syslog_tls': { pqBytes: 640 * 1024 ** 2, peak: 1.1 * 1024 ** 3, now: true, buckets: 5 },
+};
+
+function demoPQStatsFrom(
+  table: Record<string, { pqBytes: number; peak: number; now: boolean; buckets: number }>,
+  group: string | 'all',
+): OutputPQStat[] {
+  return Object.entries(table)
     .map(([key, v]) => {
       const [g, id] = key.split('::');
       return {
@@ -292,23 +355,23 @@ function demoPQStats(group: string | 'all'): OutputPQStat[] {
 }
 
 /**
- * Per-destination backpressure + persistent-queue depth over the window.
- * `pq.queue_size` is a gauge (bytes); `backpressure.outputs` is non-zero while
- * the destination is exerting backpressure.
+ * Per-source/destination backpressure + persistent-queue depth over the window.
+ * `pq.queue_size` is a gauge (bytes) dimensioned by input or output;
+ * `backpressure.outputs` / `backpressure.inputs` is non-zero while engaged.
  */
-export async function getOutputPQStats(
+async function getPQStatsByDim(
+  dim: 'input' | 'output',
   group: string | 'all',
   rangeSeconds: number,
   bucketSeconds: number,
 ): Promise<OutputPQStat[]> {
-  if (IS_DEMO) return demoPQStats(group);
   const rows = await runQuery({
     where: whereForTop(group),
     aggregations: [
       'max("pq.queue_size").as("pqBytes")',
-      'max("backpressure.outputs").as("bp")',
+      `max("backpressure.${dim}s").as("bp")`,
     ],
-    splitBys: ['output', '__worker_group'],
+    splitBys: [dim, '__worker_group'],
     timeWindowSeconds: bucketSeconds,
     earliestSeconds: rangeSeconds,
   });
@@ -324,7 +387,7 @@ export async function getOutputPQStats(
   }
   const acc = new Map<string, Acc>();
   for (const r of rows) {
-    const raw = typeof r.output === 'string' ? r.output : '';
+    const raw = typeof r[dim] === 'string' ? (r[dim] as string) : '';
     if (!raw) continue;
     const id = raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw;
     const grp = typeof r.__worker_group === 'string' ? r.__worker_group : '(unknown)';
@@ -355,6 +418,26 @@ export async function getOutputPQStats(
     backpressureNow: a.latestBP > 0,
     backpressureBuckets: a.bpBuckets,
   }));
+}
+
+/** Destination-side PQ depth + backpressure over the window. */
+export async function getOutputPQStats(
+  group: string | 'all',
+  rangeSeconds: number,
+  bucketSeconds: number,
+): Promise<OutputPQStat[]> {
+  if (IS_DEMO) return demoPQStatsFrom(DEMO_PQ, group);
+  return getPQStatsByDim('output', group, rangeSeconds, bucketSeconds);
+}
+
+/** Source-side PQ depth + backpressure over the window. */
+export async function getInputPQStats(
+  group: string | 'all',
+  rangeSeconds: number,
+  bucketSeconds: number,
+): Promise<OutputPQStat[]> {
+  if (IS_DEMO) return demoPQStatsFrom(DEMO_PQ_SOURCES, group);
+  return getPQStatsByDim('input', group, rangeSeconds, bucketSeconds);
 }
 
 // ---------------------------------------------------------------------------
@@ -571,4 +654,238 @@ function aggregateSplit(rows: MetricRow[], dim: string, byteKey: string, evKey: 
     acc.set(id, cur);
   }
   return [...acc.values()].filter((x) => x.id !== '(none)').sort((a, b) => b.bytes - a.bytes);
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline health
+// ---------------------------------------------------------------------------
+
+export interface PipelineStat {
+  id: string;
+  group: string;
+  eventsIn: number;
+  eventsOut: number;
+  dropped: number;
+  errors: number;
+}
+
+// Demo pipelines: mostly clean, one dropping heavily (a filter pipeline), one erroring.
+const DEMO_PIPELINES = [
+  { id: 'passthru', group: 'default', eps: 1200, dropPct: 0, errPct: 0 },
+  { id: 'syslog-clean', group: 'default', eps: 640, dropPct: 0.35, errPct: 0 },
+  { id: 'firewall-filter', group: 'default', eps: 410, dropPct: 0.82, errPct: 0 },
+  { id: 'win-events-shape', group: 'Windows_Fleet', eps: 300, dropPct: 0.12, errPct: 0.03 },
+  { id: 'metrics-rollup', group: 'defaultHybrid', eps: 900, dropPct: 0.55, errPct: 0 },
+  { id: 'vectra-enrich', group: 'default', eps: 260, dropPct: 0.05, errPct: 0.11 },
+  { id: 'journald-trim', group: 'Linux_Fleet', eps: 150, dropPct: 0.4, errPct: 0 },
+];
+
+function demoPipelineStats(group: string | 'all', rangeSeconds: number): PipelineStat[] {
+  return DEMO_PIPELINES.filter((p) => group === 'all' || p.group === group).map((p) => {
+    const evIn = Math.round(p.eps * rangeSeconds);
+    const dropped = Math.round(evIn * p.dropPct);
+    const errors = Math.round(evIn * p.errPct);
+    return { id: p.id, group: p.group, eventsIn: evIn, eventsOut: evIn - dropped - errors, dropped, errors };
+  });
+}
+
+/** Per-pipeline event totals (in/out/dropped/errors) over the window. */
+export async function getPipelineStats(
+  group: string | 'all',
+  rangeSeconds: number,
+): Promise<PipelineStat[]> {
+  if (IS_DEMO) return demoPipelineStats(group, rangeSeconds);
+  const rows = await runQuery({
+    where: whereForTop(group),
+    aggregations: [
+      'sum("pipe.in_events").as("evIn")',
+      'sum("pipe.out_events").as("evOut")',
+      'sum("pipe.dropped_events").as("evDrop")',
+      'sum("pipe.err_events").as("evErr")',
+    ],
+    splitBys: ['id', '__worker_group'],
+    timeWindowSeconds: -1,
+    earliestSeconds: rangeSeconds,
+  });
+  const acc = new Map<string, PipelineStat>();
+  for (const r of rows) {
+    const id = typeof r.id === 'string' ? r.id : '';
+    if (!id) continue;
+    const grp = typeof r.__worker_group === 'string' ? r.__worker_group : '(unknown)';
+    const key = `${grp}::${id}`;
+    const cur = acc.get(key) ?? { id, group: grp, eventsIn: 0, eventsOut: 0, dropped: 0, errors: 0 };
+    cur.eventsIn += Number(r.evIn ?? 0);
+    cur.eventsOut += Number(r.evOut ?? 0);
+    cur.dropped += Number(r.evDrop ?? 0);
+    cur.errors += Number(r.evErr ?? 0);
+    acc.set(key, cur);
+  }
+  return [...acc.values()].sort((a, b) => b.eventsIn - a.eventsIn);
+}
+
+// ---------------------------------------------------------------------------
+// Collection jobs
+// ---------------------------------------------------------------------------
+
+export type JobWithGroup = CollectionJob & { group: string };
+
+function demoJobs(): JobWithGroup[] {
+  const nowMs = Date.now();
+  const mk = (
+    n: number,
+    collector: string,
+    group: string,
+    state: string,
+    failed: number,
+    finished: number,
+    opts: { cron?: string; events?: number; bytes?: number } = {},
+  ): JobWithGroup => ({
+    id: `${Math.floor(nowMs / 1000) - n * 300}.${1000 + n}.${opts.cron ? 'scheduled' : 'adhoc'}.${collector}`,
+    group,
+    args: {
+      id: collector,
+      type: 'collection',
+      collector: { type: 'rest' },
+      ...(opts.cron ? { schedule: { cronSchedule: opts.cron, enabled: true } } : {}),
+    },
+    status: { state },
+    stats: {
+      tasks: { finished, failed, cancelled: 0, inFlight: state === 'running' ? 1 : 0, count: finished + failed },
+      state: { initializing: nowMs - n * 300_000, finished: state === 'finished' ? nowMs - n * 300_000 + 45_000 : 0 },
+      collectedEvents: opts.events ?? 0,
+      collectedBytes: opts.bytes ?? 0,
+    },
+  });
+  return [
+    mk(1, 'sailpoint-identity-sync', 'default', 'finished', 0, 4, { cron: '*/5 * * * *', events: 1840, bytes: 2.1e6 }),
+    mk(2, 'webex-audit-pull', 'default', 'finished', 1, 1, { cron: '*/5 * * * *', events: 220, bytes: 4.4e5 }),
+    mk(3, 's3-replay-window', 'default', 'running', 0, 2, { events: 51000, bytes: 8.2e7 }),
+    mk(4, 'sailpoint-identity-sync', 'default', 'finished', 0, 4, { cron: '*/5 * * * *', events: 1795, bytes: 2.0e6 }),
+    mk(5, 'tenable-scan-results', 'tenable', 'failed', 2, 0, { cron: '0 * * * *' }),
+    mk(6, 'webex-audit-pull', 'default', 'finished', 0, 2, { cron: '*/5 * * * *', events: 305, bytes: 6.1e5 }),
+  ];
+}
+
+/** Collection/scheduled job instances across groups, newest first. */
+export async function getJobs(groupIds: string[]): Promise<JobWithGroup[]> {
+  if (IS_DEMO) return demoJobs();
+  const per = await Promise.all(
+    groupIds.map((g) =>
+      apiGet<{ items?: CollectionJob[] }>(`/m/${encodeURIComponent(g)}/jobs`)
+        .then((r) => (r.items ?? []).map((j) => ({ ...j, group: g })))
+        .catch(() => [] as JobWithGroup[]),
+    ),
+  );
+  return per
+    .flat()
+    .sort((a, b) => (b.stats?.state?.initializing ?? 0) - (a.stats?.state?.initializing ?? 0));
+}
+
+// ---------------------------------------------------------------------------
+// Email alerting — native Cribl Notifications (group-scoped) + targets
+// ---------------------------------------------------------------------------
+
+export type NotificationWithGroup = CriblNotification & { group: string };
+
+const DEMO_ALERTS_KEY = 'vitals-demo-alerts';
+
+function loadDemoAlerts(): NotificationWithGroup[] {
+  try {
+    const raw = localStorage.getItem(DEMO_ALERTS_KEY);
+    if (raw) return JSON.parse(raw) as NotificationWithGroup[];
+  } catch {
+    /* fall through to seed */
+  }
+  return [
+    {
+      id: 'vitals-unhealthy-to-splunk',
+      group: 'default',
+      condition: 'unhealthy-dest',
+      disabled: false,
+      targets: ['system_email'],
+      conf: { name: 'to-splunk-dev', timeWindow: '300s', notifyOnResolution: true },
+      targetConfigs: [
+        {
+          id: 'system_email',
+          conf: { subject: '[Vitals] to-splunk-dev unhealthy', emailRecipient: { to: 'ops@example.com' } },
+        },
+      ],
+    },
+    {
+      id: 'vitals-nodata-win-events',
+      group: 'Windows_Fleet',
+      condition: 'no-data',
+      disabled: true,
+      targets: ['system_email'],
+      conf: { name: 'win-data-gen', timeWindow: '15m', notifyOnResolution: true },
+      targetConfigs: [
+        {
+          id: 'system_email',
+          conf: { subject: '[Vitals] win-data-gen silent', emailRecipient: { to: 'ops@example.com' } },
+        },
+      ],
+    },
+  ];
+}
+
+function saveDemoAlerts(items: NotificationWithGroup[]): void {
+  try {
+    localStorage.setItem(DEMO_ALERTS_KEY, JSON.stringify(items));
+  } catch {
+    /* demo persistence is best-effort */
+  }
+}
+
+/** Configured notification targets (email, in-product bulletin, webhooks…). */
+export async function getNotificationTargets(): Promise<NotificationTarget[]> {
+  if (IS_DEMO) {
+    return [
+      { id: 'system_email', type: 'smtp', status: { health: 'Green', metrics: { totalSent: 7, errorCnt: 0 } } },
+      { id: 'system_notifications', type: 'bulletin_message', status: { health: 'Green' } },
+    ];
+  }
+  return (await apiGet<{ items?: NotificationTarget[] }>('/notification-targets')).items ?? [];
+}
+
+/** All Notifications across the given groups, each tagged with its group. */
+export async function getNotifications(groupIds: string[]): Promise<NotificationWithGroup[]> {
+  if (IS_DEMO) return loadDemoAlerts();
+  const per = await Promise.all(
+    groupIds.map((g) =>
+      apiGet<{ items?: CriblNotification[] }>(`/m/${encodeURIComponent(g)}/notifications`)
+        .then((r) => (r.items ?? []).map((n) => ({ ...n, group: g })))
+        .catch(() => [] as NotificationWithGroup[]),
+    ),
+  );
+  return per.flat();
+}
+
+export async function createNotification(group: string, n: CriblNotification): Promise<void> {
+  if (IS_DEMO) {
+    const items = loadDemoAlerts();
+    if (items.some((x) => x.id === n.id)) throw new Error(`Alert id "${n.id}" already exists`);
+    items.push({ ...n, group });
+    saveDemoAlerts(items);
+    return;
+  }
+  await apiPost(`/m/${encodeURIComponent(group)}/notifications`, n);
+}
+
+export async function updateNotification(group: string, n: CriblNotification): Promise<void> {
+  if (IS_DEMO) {
+    const items = loadDemoAlerts().map((x) =>
+      x.id === n.id && x.group === group ? { ...n, group } : x,
+    );
+    saveDemoAlerts(items);
+    return;
+  }
+  await apiPatch(`/m/${encodeURIComponent(group)}/notifications/${encodeURIComponent(n.id)}`, n);
+}
+
+export async function deleteNotification(group: string, id: string): Promise<void> {
+  if (IS_DEMO) {
+    saveDemoAlerts(loadDemoAlerts().filter((x) => !(x.id === id && x.group === group)));
+    return;
+  }
+  await apiDelete(`/m/${encodeURIComponent(group)}/notifications/${encodeURIComponent(id)}`);
 }

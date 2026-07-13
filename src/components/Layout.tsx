@@ -7,10 +7,13 @@ import {
   IconThroughput,
   IconSources,
   IconRoutes,
+  IconPipelines,
   IconDest,
+  IconJobs,
   IconNodes,
   IconValue,
   IconBell,
+  IconMail,
   IconRefresh,
 } from './icons';
 
@@ -19,8 +22,11 @@ const NAV = [
   { to: '/throughput', label: 'Throughput', Icon: IconThroughput, title: 'Throughput & Volume' },
   { to: '/sources', label: 'Sources', Icon: IconSources, title: 'Sources' },
   { to: '/routes', label: 'Routes', Icon: IconRoutes, title: 'Route Health' },
+  { to: '/pipelines', label: 'Pipelines', Icon: IconPipelines, title: 'Pipeline Health' },
   { to: '/destinations', label: 'Destinations', Icon: IconDest, title: 'Destinations' },
+  { to: '/jobs', label: 'Collectors', Icon: IconJobs, title: 'Collection Jobs' },
   { to: '/nodes', label: 'Worker Nodes', Icon: IconNodes, title: 'Worker & Edge Nodes' },
+  { to: '/alerts', label: 'Alerts', Icon: IconMail, title: 'Email Alerts' },
   { to: '/notifications', label: 'Notifications', Icon: IconBell, title: 'System Notifications' },
   { to: '/value', label: 'Data Value', Icon: IconValue, title: 'Data Reduction Value' },
 ];

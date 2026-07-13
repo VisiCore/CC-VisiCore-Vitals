@@ -5,14 +5,52 @@ import { getWorkers, getSystemInfo, getNodeMetrics, type NodePoint } from '../ap
 import { Card, StatTile, Loading, ErrorBanner, HealthBadge, Meter } from '../components/ui';
 import { Sparkline } from '../components/charts/Sparkline';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
+import type { WorkerNode } from '../api/types';
 
 // Per-node metrics are one API call each, so cap how many nodes get sparklines
 // and how far back they reach (long windows return huge sample sets).
 const MAX_SPARK_NODES = 40;
 const MAX_SPARK_RANGE_SEC = 24 * 3600;
 
+// Per-group config & software-version drift, derived from data already loaded:
+// a group is "drifting" when its nodes run more than one Cribl version, or run
+// a version different from the leader's.
+interface GroupDrift {
+  id: string;
+  configVersion?: string;
+  upgradeVersion?: string;
+  nodeCount: number;
+  versions: string[];
+  behindLeader: boolean;
+}
+
+function computeDrift(
+  groups: { id: string; configVersion?: string; upgradeVersion?: string }[],
+  nodes: WorkerNode[],
+  leaderVersion: string | undefined,
+): GroupDrift[] {
+  const leaderShort = leaderVersion?.split('-')[0];
+  return groups
+    .map((g) => {
+      const members = nodes.filter((w) => w.group === g.id);
+      const versions = [...new Set(members.map((w) => w.info.cribl?.version).filter((v): v is string => !!v))];
+      const behindLeader =
+        !!leaderShort && versions.length > 0 && versions.some((v) => v.split('-')[0] !== leaderShort);
+      return {
+        id: g.id,
+        configVersion: g.configVersion,
+        upgradeVersion: g.upgradeVersion,
+        nodeCount: members.length,
+        versions,
+        behindLeader,
+      };
+    })
+    .filter((g) => g.nodeCount > 0)
+    .sort((a, b) => Number(b.versions.length > 1 || b.behindLeader) - Number(a.versions.length > 1 || a.behindLeader));
+}
+
 export function Nodes() {
-  const { group, range, tick } = useApp();
+  const { group, range, tick, groups } = useApp();
   const workers = useAsync(() => getWorkers(), [tick]);
   const sys = useAsync(() => getSystemInfo(), [tick]);
 
@@ -51,6 +89,17 @@ export function Nodes() {
   const totalWP = nodes.reduce((a, w) => a + (w.workerProcesses ?? 0), 0);
   const now = Date.now();
   const leader = sys.data;
+
+  const drift = useMemo(
+    () =>
+      computeDrift(
+        group === 'all' ? groups : groups.filter((g) => g.id === group),
+        workers.data ?? [],
+        leader?.BUILD?.VERSION,
+      ),
+    [groups, group, workers.data, leader?.BUILD?.VERSION],
+  );
+  const driftingGroups = drift.filter((g) => g.versions.length > 1 || g.behindLeader);
 
   function sparkCell(nodeId: string, key: 'cpu' | 'memPct') {
     const pts = nodeMetrics.data?.[nodeId];
@@ -117,6 +166,73 @@ export function Nodes() {
           </div>
         </Card>
       )}
+
+      <Card
+        title="Config & Version Drift"
+        note={
+          driftingGroups.length > 0
+            ? `${driftingGroups.length} group${driftingGroups.length === 1 ? '' : 's'} drifting`
+            : 'all groups aligned'
+        }
+      >
+        {workers.loading && !workers.data ? (
+          <Loading height={120} />
+        ) : drift.length === 0 ? (
+          <div className="center-state">No groups with connected nodes for this selection</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th className="no-sort">Group</th>
+                  <th className="no-sort num">Nodes</th>
+                  <th className="no-sort">Committed Config</th>
+                  <th className="no-sort">Node Versions</th>
+                  <th className="no-sort">Leader {leader?.BUILD?.VERSION ?? ''}</th>
+                  <th className="no-sort">Pending Upgrade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drift.map((g) => {
+                  const mixed = g.versions.length > 1;
+                  return (
+                    <tr key={g.id}>
+                      <td className="id-cell">{g.id}</td>
+                      <td className="num">{g.nodeCount}</td>
+                      <td className="mono muted">{g.configVersion?.slice(0, 9) ?? '—'}</td>
+                      <td>
+                        {g.versions.length === 0 ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          g.versions.map((v) => (
+                            <span
+                              key={v}
+                              className="type-chip"
+                              style={mixed ? { color: 'var(--warning)' } : undefined}
+                            >
+                              {v.split('-')[0]}
+                            </span>
+                          ))
+                        )}
+                      </td>
+                      <td>
+                        {mixed ? (
+                          <HealthBadge health="Yellow" label="Mixed versions" />
+                        ) : g.behindLeader ? (
+                          <HealthBadge health="Yellow" label="Behind leader" />
+                        ) : (
+                          <HealthBadge health="Green" label="Aligned" />
+                        )}
+                      </td>
+                      <td className="mono muted">{g.upgradeVersion ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Card title="Worker & Edge Nodes">
         {workers.loading && !workers.data ? (

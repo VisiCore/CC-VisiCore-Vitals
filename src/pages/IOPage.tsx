@@ -8,6 +8,7 @@ import {
   getTopOutputs,
   getMessages,
   getOutputPQStats,
+  getInputPQStats,
   streamLink,
   type TopItem,
   type IOStatusWithGroup,
@@ -55,9 +56,13 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
     [group, range.id, tick, kind],
   );
   const msgs = useAsync<SystemMessage[]>(() => getMessages(), [tick]);
-  // Backpressure & persistent-queue stats only exist for destinations.
+  // Backpressure & persistent-queue stats — sources spool to PQ too (Always On /
+  // Smart mode), so both sides get coverage, each split by its own dimension.
   const pqStats = useAsync<OutputPQStat[]>(
-    () => (isSource ? Promise.resolve([]) : getOutputPQStats(group, range.rangeSeconds, range.bucketSeconds)),
+    () =>
+      isSource
+        ? getInputPQStats(group, range.rangeSeconds, range.bucketSeconds)
+        : getOutputPQStats(group, range.rangeSeconds, range.bucketSeconds),
     [group, range.id, tick, kind],
   );
 
@@ -175,22 +180,20 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
           accent={counts.Red > 0 ? 'var(--critical)' : 'var(--good)'}
           foot={counts.Yellow > 0 ? <span>{counts.Yellow} warning</span> : undefined}
         />
-        {isSource ? (
-          <StatTile label={volLabel} value={formatBytes(totalVol)} accent="var(--series-in)" />
-        ) : (
-          <StatTile
-            label="Backpressured"
-            value={String(bpNow)}
-            accent={bpNow > 0 ? 'var(--critical)' : 'var(--good)'}
-            foot={
-              totalPQ > 0 ? (
-                <span>{formatBytes(totalPQ)} queued to disk</span>
-              ) : (
-                <span>{formatBytes(totalVol)} delivered</span>
-              )
-            }
-          />
-        )}
+        <StatTile
+          label="Backpressured"
+          value={String(bpNow)}
+          accent={bpNow > 0 ? 'var(--critical)' : 'var(--good)'}
+          foot={
+            totalPQ > 0 ? (
+              <span>{formatBytes(totalPQ)} queued to disk</span>
+            ) : (
+              <span>
+                {formatBytes(totalVol)} {isSource ? 'received' : 'delivered'}
+              </span>
+            )
+          }
+        />
       </div>
 
       <div className="grid grid-3">
@@ -239,8 +242,8 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
                     {th('bytes', volLabel, true)}
                     {th('events', 'Events', true)}
                     {!isSource && th('dropped', 'Dropped', true)}
-                    {!isSource && th('pqBytes', 'PQ Depth', true)}
-                    {!isSource && th('bpState', 'Backpressure')}
+                    {th('pqBytes', 'PQ Depth', true)}
+                    {th('bpState', 'Backpressure')}
                   </tr>
                 </thead>
                 <tbody>
@@ -271,29 +274,25 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
                               {r.dropped > 0 ? formatCount(r.dropped) : '—'}
                             </td>
                           )}
-                          {!isSource && (
-                            <td
-                              className={`num ${r.pqBytes > 0 ? 'delta-down' : ''}`}
-                              title={r.pq ? `Peak in window: ${formatBytes(r.pq.pqPeakBytes)}` : undefined}
-                            >
-                              {r.pqBytes > 0 ? formatBytes(r.pqBytes) : '—'}
-                            </td>
-                          )}
-                          {!isSource && (
-                            <td>
-                              {r.bpState === 2 ? (
-                                <HealthBadge health="Red" label="Engaged" />
-                              ) : r.bpState === 1 ? (
-                                <HealthBadge health="Yellow" label="Earlier" />
-                              ) : (
-                                <span className="muted">—</span>
-                              )}
-                            </td>
-                          )}
+                          <td
+                            className={`num ${r.pqBytes > 0 ? 'delta-down' : ''}`}
+                            title={r.pq ? `Peak in window: ${formatBytes(r.pq.pqPeakBytes)}` : undefined}
+                          >
+                            {r.pqBytes > 0 ? formatBytes(r.pqBytes) : '—'}
+                          </td>
+                          <td>
+                            {r.bpState === 2 ? (
+                              <HealthBadge health="Red" label="Engaged" />
+                            ) : r.bpState === 1 ? (
+                              <HealthBadge health="Yellow" label="Earlier" />
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
                         </tr>
                         {isOpen && (
                           <tr>
-                            <td className="detail-cell" colSpan={isSource ? 6 : 9}>
+                            <td className="detail-cell" colSpan={isSource ? 8 : 9}>
                               <div className="detail-grid">
                                 <div>
                                   <div className="dk">Health</div>
@@ -313,7 +312,7 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
                                     {r.timestamp ? formatTime(r.timestamp) : '—'}
                                   </div>
                                 </div>
-                                {!isSource && r.pq && (
+                                                {r.pq && (
                                   <>
                                     <div>
                                       <div className="dk">PQ depth (peak)</div>
@@ -400,7 +399,7 @@ export function IOPage({ kind }: { kind: 'source' | 'destination' }) {
                   })}
                   {shown.length === 0 && (
                     <tr>
-                      <td colSpan={isSource ? 6 : 9} className="muted" style={{ textAlign: 'center', padding: 24 }}>
+                      <td colSpan={isSource ? 8 : 9} className="muted" style={{ textAlign: 'center', padding: 24 }}>
                         No matches
                       </td>
                     </tr>

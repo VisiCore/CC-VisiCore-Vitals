@@ -105,6 +105,30 @@ export const IconBell = (p: P) => (
   </svg>
 );
 
+export const IconPipelines = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 7h5l3 5 3-5h7" opacity="0.55" />
+    <path d="M3 12h5l3 5 3-5h7" />
+    <circle cx="21" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="3" cy="12" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const IconJobs = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="7" width="18" height="13" rx="1.8" />
+    <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7" />
+    <path d="M9 13.5l2 2 4-4" />
+  </svg>
+);
+
+export const IconMail = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 7.5l9 6 9-6" />
+  </svg>
+);
+
 export const IconChevron = (p: P) => (
   <svg {...base} {...p}>
     <path d="M9 6l6 6-6 6" />

@@ -846,3 +846,24 @@ table.data tbody tr:last-child td {
     grid-column: span 1;
   }
 }
+
+/* Email-alert form fields + compact table buttons */
+.form-field {
+  display: block;
+}
+.form-field > .dk {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+.form-field .select {
+  width: 100%;
+}
+.btn-sm {
+  padding: 4px 9px;
+  font-size: 12px;
+}

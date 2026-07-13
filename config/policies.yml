@@ -1,6 +1,7 @@
 # Product API access declaration for Vitals.
 # At install time, admins see exactly which platform resources the app will use.
-# All calls are read-only monitoring endpoints.
+# All monitoring calls are read-only; the only writes are Notification CRUD,
+# which powers the Email Alerts page (native Cribl notifications).
 
 policies:
   # Worker groups / edge fleets inventory
@@ -55,3 +56,16 @@ policies:
     actions: ['GET']
   - object: '/health'
     actions: ['GET']
+
+  # Collection & scheduled job status for the Collectors page
+  - object: '/m/:gid/jobs'
+    actions: ['GET']
+
+  # Email Alerts page — Vitals manages native Cribl Notifications wired to the
+  # SMTP notification target; Cribl evaluates conditions and sends the email.
+  - object: '/notification-targets'
+    actions: ['GET']
+  - object: '/m/:gid/notifications'
+    actions: ['GET', 'POST']
+  - object: '/m/:gid/notifications/*'
+    actions: ['GET', 'PATCH', 'DELETE']

@@ -12,6 +12,10 @@ export interface Group {
   provisioned?: boolean;
   estimatedIngestRate?: number;
   cloud?: { provider?: string; region?: string };
+  /** Committed config version (short git hash). */
+  configVersion?: string;
+  /** Target Cribl version when a group upgrade is pending. */
+  upgradeVersion?: string;
 }
 
 export interface WorkerNode {
@@ -73,6 +77,63 @@ export interface SystemMessage {
   group?: string;
   workerId?: string;
   metadata?: unknown;
+}
+
+/** One job instance from GET /m/:gid/jobs (collection runs, scheduled or ad hoc). */
+export interface CollectionJob {
+  id: string;
+  keep?: boolean;
+  args?: {
+    id?: string;
+    type?: string; // "collection" | "executor" | ...
+    description?: string;
+    groupId?: string;
+    collector?: { type?: string };
+    schedule?: { cronSchedule?: string; enabled?: boolean };
+  };
+  status?: { state?: string; reason?: string };
+  stats?: {
+    tasks?: {
+      finished?: number;
+      failed?: number;
+      cancelled?: number;
+      orphaned?: number;
+      inFlight?: number;
+      count?: number;
+      totalExecutionTime?: number;
+    };
+    /** State-name → epoch-ms timestamp of when the job entered that state. */
+    state?: Record<string, number>;
+    collectedBytes?: number;
+    collectedEvents?: number;
+    discoveredEvents?: number;
+    totalResults?: number;
+  };
+}
+
+/** A configured notification target (GET /notification-targets). */
+export interface NotificationTarget {
+  id: string;
+  type: string; // "smtp" | "bulletin_message" | "webhook" | ...
+  status?: { health?: Health; metrics?: Record<string, number> };
+}
+
+/** Email settings for one target inside a Notification's targetConfigs. */
+export interface NotificationEmailConf {
+  subject?: string;
+  body?: string;
+  emailRecipient?: { to?: string; cc?: string; bcc?: string };
+}
+
+/** A native Cribl Notification (condition → targets), group-scoped. */
+export interface CriblNotification {
+  id: string;
+  condition: string;
+  disabled?: boolean;
+  targets?: string[];
+  /** Condition-specific config (name, timeWindow, dataVolume, usageThreshold…). */
+  conf?: Record<string, unknown>;
+  targetConfigs?: { id: string; conf?: NotificationEmailConf }[];
 }
 
 export interface SystemInfo {
