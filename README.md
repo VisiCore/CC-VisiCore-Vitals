@@ -11,7 +11,7 @@ then in Cribl go to **Manage → App Platform → Add App → Import from File**
 `.tgz`. Alternatively, use **Import from URL** with the release asset link directly:
 
 ```
-https://github.com/VisiCore/CC-VisiCore-Vitals/releases/download/v1.2.0/vision-next-gen-1.2.0.tgz
+https://github.com/VisiCore/CC-VisiCore-Vitals/releases/download/v1.2.0/CC-VisiCore-Vitals-1.2.0.tgz
 ```
 
 Once installed and shared, the app runs on live data automatically — no configuration needed.
