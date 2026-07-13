@@ -11,7 +11,7 @@ then in Cribl go to **Manage → App Platform → Add App → Import from File**
 `.tgz`. Alternatively, use **Import from URL** with the release asset link directly:
 
 ```
-https://github.com/VisiCore/CC-VisiCore-Vitals/releases/download/v1.2.0/CC-VisiCore-Vitals-1.2.0.tgz
+https://github.com/VisiCore/CC-VisiCore-Vitals/releases/download/v1.2.1/CC-VisiCore-Vitals-1.2.1.tgz
 ```
 
 Once installed and shared, the app runs on live data automatically — no configuration needed.
@@ -32,7 +32,7 @@ executions, no external backend.
 | **Routes** | **Route Health**: routes that reported data in the window but have gone silent past a configurable stall threshold — stalled-first sorting, silent-for durations, and a deep link to the group's routing table |
 | **Pipelines** | Per-pipeline events in/out, **dropped counts, drop %, and processing errors**, with a Top Droppers panel — spot the pipeline silently eating your events |
 | **Destinations** | Every Destination with health, volume out, **dropped** counts, **persistent-queue depth, and backpressure state** (engaged now / earlier in window) — expandable to status detail + related errors + a deep link into Cribl Stream |
-| **Collectors** | Collection & scheduled job runs across groups — state, **failed-task counts**, cron schedules, events/bytes collected, filterable to failures and in-flight runs |
+| **Collectors** | Collection & scheduled job runs across groups — state, **failed-task counts**, cron schedules, events/bytes collected, filterable to failures and in-flight runs, **expandable to the actual task errors** (message + stack trace) |
 | **Worker Nodes** | Worker & edge fleet health matrix — **CPU & memory trend sparklines per node**, disk, worker processes, last heartbeat, leader vitals, and a **Config & Version Drift** panel (committed config version, mixed-version and behind-leader detection per group) |
 | **Alerts** | **Email alerting** — create native Cribl Notifications (destination unhealthy / backpressure / PQ usage, source no-data / volume thresholds) delivered through the platform SMTP target; Cribl evaluates conditions server-side, so alerts fire even with the dashboard closed |
 | **Notifications** | System errors / warnings / info (failed source inits, zero-volume routes) — filterable, searchable, expandable to full detail |

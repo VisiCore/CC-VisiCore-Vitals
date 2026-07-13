@@ -57,8 +57,10 @@ policies:
   - object: '/health'
     actions: ['GET']
 
-  # Collection & scheduled job status for the Collectors page
+  # Collection & scheduled job status + per-run task errors for the Collectors page
   - object: '/m/:gid/jobs'
+    actions: ['GET']
+  - object: '/m/:gid/jobs/*'
     actions: ['GET']
 
   # Email Alerts page — Vitals manages native Cribl Notifications wired to the

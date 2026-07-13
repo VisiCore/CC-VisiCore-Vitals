@@ -111,6 +111,18 @@ export interface CollectionJob {
   };
 }
 
+/** One task error from GET /m/:gid/jobs/:id/errors. */
+export interface JobError {
+  timestamp?: number; // epoch ms
+  taskId?: string;
+  error?: {
+    name?: string;
+    message?: string;
+    stack?: string;
+    reason?: { message?: string; stack?: string };
+  };
+}
+
 /** A configured notification target (GET /notification-targets). */
 export interface NotificationTarget {
   id: string;

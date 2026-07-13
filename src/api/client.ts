@@ -5,6 +5,7 @@ import type {
   CriblNotification,
   Group,
   IOStatus,
+  JobError,
   LicenseUsageDay,
   MetricRow,
   NotificationTarget,
@@ -779,6 +780,38 @@ export async function getJobs(groupIds: string[]): Promise<JobWithGroup[]> {
   return per
     .flat()
     .sort((a, b) => (b.stats?.state?.initializing ?? 0) - (a.stats?.state?.initializing ?? 0));
+}
+
+/**
+ * Task errors for one job run. The endpoint returns a single error object for
+ * one failed task and an array when several tasks failed; normalize to a list.
+ */
+export async function getJobErrors(group: string, jobId: string): Promise<JobError[]> {
+  if (IS_DEMO) {
+    if (!jobId.includes('tenable-scan-results')) return [];
+    return [
+      {
+        timestamp: Date.now() - 12 * 60_000,
+        taskId: 'discover',
+        error: {
+          name: 'FatalTaskError',
+          message: 'encountered fatal task error',
+          reason: {
+            message:
+              'Discover failed: request to https://cloud.tenable.com/scans returned 401 Unauthorized — check the collector credentials.',
+          },
+        },
+      },
+    ];
+  }
+  const res = await apiGet<JobError | JobError[] | { items?: JobError[] }>(
+    `/m/${encodeURIComponent(group)}/jobs/${encodeURIComponent(jobId)}/errors`,
+  );
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === 'object' && 'items' in res && Array.isArray(res.items)) return res.items;
+  return res && typeof res === 'object' && ('error' in res || 'taskId' in res)
+    ? [res as JobError]
+    : [];
 }
 
 // ---------------------------------------------------------------------------

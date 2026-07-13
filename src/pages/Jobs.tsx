@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useApp, useGroupIds } from '../state/AppContext';
 import { useAsync } from '../hooks/useAsync';
-import { getJobs, streamLink, type JobWithGroup } from '../api/client';
+import { getJobs, getJobErrors, streamLink, type JobWithGroup } from '../api/client';
+import type { JobError } from '../api/types';
 import { Card, StatTile, Loading, ErrorBanner, HealthBadge } from '../components/ui';
-import { formatBytes, formatCount, timeAgo } from '../lib/format';
+import { formatBytes, formatCount, formatTime, timeAgo } from '../lib/format';
 
 type Filter = 'all' | 'failed' | 'running' | 'scheduled';
 
@@ -29,6 +30,98 @@ function stateHealth(s: string): 'Green' | 'Yellow' | 'Red' {
   return 'Yellow'; // running / pending / initializing
 }
 
+/** Expanded row body: task breakdown plus the actual task errors, fetched lazily. */
+function JobDetail({ job }: { job: JobWithGroup }) {
+  const hasFailures = (job.stats?.tasks?.failed ?? 0) > 0 || job.status?.state === 'failed';
+  const errors = useAsync<JobError[]>(
+    () => (hasFailures ? getJobErrors(job.group, job.id) : Promise.resolve([])),
+    [job.group, job.id, hasFailures],
+  );
+  const [stackFor, setStackFor] = useState<number | null>(null);
+  const tasks = job.stats?.tasks;
+
+  return (
+    <>
+      <div className="detail-grid">
+        <div>
+          <div className="dk">Job ID</div>
+          <div className="dv mono" style={{ fontSize: 11.5 }}>{job.id}</div>
+        </div>
+        <div>
+          <div className="dk">Tasks (finished / failed / in flight)</div>
+          <div className="dv">
+            {tasks ? `${tasks.finished ?? 0} / ${tasks.failed ?? 0} / ${tasks.inFlight ?? 0}` : '—'}
+          </div>
+        </div>
+        <div>
+          <div className="dk">Discovered events</div>
+          <div className="dv">{formatCount(job.stats?.discoveredEvents ?? 0)}</div>
+        </div>
+        {job.status?.reason && (
+          <div>
+            <div className="dk">Reason</div>
+            <div className="dv">{job.status.reason}</div>
+          </div>
+        )}
+      </div>
+      {hasFailures && (
+        <div style={{ padding: '0 16px 14px 34px' }}>
+          <div className="section-title" style={{ margin: '2px 0 8px' }}>
+            Task Errors
+          </div>
+          {errors.loading && !errors.data ? (
+            <Loading height={60} />
+          ) : errors.error ? (
+            <ErrorBanner message={errors.error} />
+          ) : (errors.data ?? []).length === 0 ? (
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              No error detail recorded for this run — errors may have aged out (job artifacts
+              expire with the run's TTL). Check the collector's recent runs in Cribl Stream.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(errors.data ?? []).map((e, i) => {
+                const msg = e.error?.reason?.message ?? e.error?.message ?? 'Unknown error';
+                const stack = e.error?.reason?.stack ?? e.error?.stack;
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                      <span className="sev sev-error" style={{ marginTop: 1 }}>
+                        {e.taskId ?? 'task'}
+                      </span>
+                      <span style={{ fontSize: 13 }}>
+                        {msg}
+                        {e.timestamp ? (
+                          <span className="muted"> · {formatTime(e.timestamp)}</span>
+                        ) : null}
+                        {stack && (
+                          <>
+                            {' '}
+                            <button
+                              className="btn btn-sm"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                setStackFor(stackFor === i ? null : i);
+                              }}
+                            >
+                              {stackFor === i ? 'Hide stack' : 'Stack trace'}
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    {stackFor === i && stack && <pre className="detail-pre">{stack}</pre>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Jobs() {
   const { group, tick } = useApp();
   const groupIds = useGroupIds();
@@ -37,6 +130,16 @@ export function Jobs() {
   const jobs = useAsync<JobWithGroup[]>(() => getJobs(groupIds), [idKey, tick]);
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  function toggle(key: string) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const rows = useMemo(
     () => (jobs.data ?? []).filter((j) => group === 'all' || j.group === group),
@@ -139,9 +242,13 @@ export function Jobs() {
                   const tasks = j.stats?.tasks;
                   const startedMs = j.stats?.state?.initializing ?? 0;
                   const cron = j.args?.schedule?.cronSchedule;
+                  const rowKey = `${j.group}:${j.id}`;
+                  const isOpen = open.has(rowKey);
                   return (
-                    <tr key={`${j.group}:${j.id}`}>
+                    <Fragment key={rowKey}>
+                    <tr className="row-expandable" onClick={() => toggle(rowKey)}>
                       <td className="id-cell" title={j.id}>
+                        <span className={`row-caret ${isOpen ? 'open' : ''}`}>▶</span>
                         {collectorName(j)}
                       </td>
                       <td>
@@ -172,6 +279,7 @@ export function Jobs() {
                             href={streamLink('job', j.group)}
                             target="_top"
                             rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             style={{ textDecoration: 'none' }}
                           >
                             Open ↗
@@ -179,6 +287,14 @@ export function Jobs() {
                         )}
                       </td>
                     </tr>
+                    {isOpen && (
+                      <tr>
+                        <td className="detail-cell" colSpan={10}>
+                          <JobDetail job={j} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
                 {shown.length === 0 && (
