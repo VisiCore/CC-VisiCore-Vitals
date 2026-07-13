@@ -1,6 +1,6 @@
 # Vitals
 
-**Health monitoring for Cribl deployments — the next‑gen successor to the CriblVision Pack.**
+**Health monitoring for Cribl deployments.**
 
 ![Vitals — Deployment Overview](docs/overview.png)
 
