@@ -24,8 +24,8 @@
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   },
-  "displayName": "Cribl Vision",
-  "description": "Ultimate Cribl Health Monitoring App",
+  "displayName": "Vitals",
+  "description": "Health monitoring app for Cribl deployments",
   "author": "Andrew Hendrix",
   "cribl": {
     "type": "app",

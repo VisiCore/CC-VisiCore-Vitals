@@ -6,6 +6,7 @@ import {
   getOutputStatuses,
   getTopInputs,
   getTopOutputs,
+  getTopRoutes,
   getWorkers,
   getMessages,
 } from '../api/client';
@@ -30,6 +31,7 @@ export function Overview() {
   );
   const topIn = useAsync(() => getTopInputs(group, range.rangeSeconds), [group, range.id, tick]);
   const topOut = useAsync(() => getTopOutputs(group, range.rangeSeconds), [group, range.id, tick]);
+  const topRoutes = useAsync(() => getTopRoutes(group, range.rangeSeconds), [group, range.id, tick]);
   const workers = useAsync(() => getWorkers(), [tick]);
   const messages = useAsync(() => getMessages(), [tick]);
 
@@ -140,7 +142,7 @@ export function Overview() {
         </Card>
       </div>
 
-      <div className="grid grid-2">
+      <div className="grid grid-3">
         <Card title="Top Sources" note="by volume in">
           {topIn.loading && !topIn.data ? (
             <Loading />
@@ -160,6 +162,17 @@ export function Overview() {
               color="var(--series-out)"
               formatValue={formatBytes}
               items={(topOut.data ?? []).slice(0, 8).map((s) => ({ id: s.id, value: s.bytes }))}
+            />
+          )}
+        </Card>
+        <Card title="Top Routes" note="by volume in">
+          {topRoutes.loading && !topRoutes.data ? (
+            <Loading />
+          ) : (
+            <BarList
+              color="var(--accent)"
+              formatValue={formatBytes}
+              items={(topRoutes.data ?? []).slice(0, 8).map((s) => ({ id: s.id, value: s.bytes }))}
             />
           )}
         </Card>

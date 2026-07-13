@@ -1,4 +1,4 @@
-# Product API access declaration for Cribl Vision.
+# Product API access declaration for Vitals.
 # At install time, admins see exactly which platform resources the app will use.
 # All calls are read-only monitoring endpoints.
 

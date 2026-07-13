@@ -52,7 +52,7 @@ export function Layout() {
         <div className="brand">
           <BrandMark />
           <div>
-            <div className="brand-name">Cribl Vision</div>
+            <div className="brand-name">Vitals</div>
             <div className="brand-sub">Health Monitoring</div>
           </div>
         </div>

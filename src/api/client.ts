@@ -543,6 +543,20 @@ export async function getTopOutputs(group: string | 'all', rangeSeconds: number)
   return aggregateSplit(rows, 'output', IS_DEMO ? 'bytesOut' : 'bytes', IS_DEMO ? 'eventsOut' : 'events');
 }
 
+/** Top routes by bytes in for a group, aggregated across buckets. */
+export async function getTopRoutes(group: string | 'all', rangeSeconds: number): Promise<TopItem[]> {
+  const rows = IS_DEMO
+    ? demoRouteRows(group, rangeSeconds, Math.max(60, Math.floor(rangeSeconds / 60)))
+    : await runQuery({
+        where: whereForTop(group),
+        aggregations: ['sum("route.in_bytes").as("bytes")', 'sum("route.in_events").as("events")'],
+        splitBys: ['name'],
+        timeWindowSeconds: -1,
+        earliestSeconds: rangeSeconds,
+      });
+  return aggregateSplit(rows, 'name', IS_DEMO ? 'bytesIn' : 'bytes', IS_DEMO ? 'eventsIn' : 'events');
+}
+
 /** Collapse split time-bucket rows into one total per split key.
  *  Metric input/output dimensions are formatted `<type>:<id>`; strip the type
  *  prefix so ids line up with the bare ids from the Source/Destination status API. */
